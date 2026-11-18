@@ -201,6 +201,9 @@ Con una API key de **Configuración → API** (`npx @snappli/cli login`, `SNAPPL
 - `npx @snappli/cli webhooks deliveries --status FAILED` / `deliveries get <id>`: el payload real, qué respondió tu servidor y el resultado del mapeo (`webhooks:read`). Ese payload, guardado en un archivo, se reenvía a tu servidor local con `webhooks trigger --file`.
 - `npx @snappli/cli webhooks mapping-preview <id> --response r.json`: qué rellenaría el mapeo guardado (`webhooks:read`).
 - `npx @snappli/cli webhooks test <id> --yes` y `webhooks retry <deliveryId> --yes`: envían de verdad a la URL configurada (`webhooks:test`). Pide confirmación al usuario antes de usarlos.
+- `npx @snappli/cli connectors list` / `connectors get <id>`: conectores y operaciones tal como los ve la IA, sin secretos (`connectors:read`).
+- `npx @snappli/cli connectors logs <id>`: últimas llamadas de la IA y de pruebas, con código, latencia y error (`connectors:read`).
+- `npx @snappli/cli connectors test <id> <operación> --args '{"fecha":"2026-12-01"}' [--bound '{"contact.phone":"+593…"}']`: Snappli llama a tu API como lo haría la IA y devuelve el texto que leería (`connectors:test`). Una escritura necesita `--allow-write` y se ejecuta de verdad: pide confirmación al usuario antes.
 
 En el panel están las mismas acciones: **Enviar prueba** en la integración y el historial de entregas.
 

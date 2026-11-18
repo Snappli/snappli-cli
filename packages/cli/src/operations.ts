@@ -868,3 +868,89 @@ function requireId(value: string | undefined, what: string): string {
   if (!value) throw new CliError(`Falta ${what}.`, 'missing_id');
   return value;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Con API key: conectores
+
+export function listConnectors(client: Snappli) {
+  return client.connectors.list();
+}
+
+export function getConnector(client: Snappli, id: string | undefined) {
+  return client.connectors.get(requireId(id, 'el id del conector'));
+}
+
+export function connectorLogs(client: Snappli, id: string | undefined) {
+  return client.connectors.logs(requireId(id, 'el id del conector'));
+}
+
+export interface TestOperationOptions {
+  connectorId: string | undefined;
+  /** Id, nombre o nombre de herramienta (`toolName`) de la operación. */
+  operation: string | undefined;
+  args?: unknown;
+  boundValues?: unknown;
+  allowWrite: boolean;
+}
+
+/** Ejecuta una operación como lo haría la IA y explica el resultado. */
+export async function testConnectorOperation(client: Snappli, options: TestOperationOptions) {
+  const connectorId = requireId(options.connectorId, 'el id del conector');
+  const wanted = requireId(options.operation, 'la operación (id o nombre)');
+  const args = asObject(options.args ?? {}, 'args');
+  const boundValues = asObject(options.boundValues ?? {}, 'bound') as Record<
+    string,
+    string | number | boolean
+  >;
+  const connector = await client.connectors.get(connectorId);
+  const operation = connector.operations.find(
+    (op) => op.id === wanted || op.name === wanted || op.toolName === wanted,
+  );
+  if (!operation) {
+    throw new CliError(
+      `El conector no tiene la operación «${wanted}». Operaciones: ${connector.operations.map((op) => op.name).join(', ') || 'ninguna'}.`,
+      'operation_not_found',
+    );
+  }
+  if (operation.kind === 'write' && !options.allowWrite) {
+    throw new CliError(
+      `«${operation.name}» escribe en el sistema del cliente y se ejecutaría de verdad. Repite con --allow-write (CLI) o con SNAPPLI_ALLOW_WRITE=1 (MCP) si es lo que quieres.`,
+      'write_not_allowed',
+    );
+  }
+  const result = await client.connectors.testOperation(connectorId, operation.id, {
+    args,
+    boundValues,
+    allowWrite: options.allowWrite,
+  });
+  const hints: string[] = [];
+  if (!result.ok) {
+    hints.push(
+      'La llamada falló: text es el error que vería la IA. El detalle está en connectors logs.',
+    );
+  }
+  if (result.ok && !result.mapped) {
+    hints.push(
+      'La operación no tiene responseMap: la IA lee la respuesta entera recortada. Define los campos a devolver.',
+    );
+  }
+  return {
+    operation: {
+      id: operation.id,
+      name: operation.name,
+      toolName: operation.toolName,
+      kind: operation.kind,
+      method: operation.method,
+      path: operation.path,
+    },
+    ...result,
+    ...(hints.length ? { hints } : {}),
+  };
+}
+
+function asObject(value: unknown, name: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new CliError(`${name} debe ser un objeto JSON.`, 'invalid_json');
+  }
+  return value as Record<string, unknown>;
+}

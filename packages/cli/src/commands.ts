@@ -6,10 +6,13 @@ import { connectorEventsUrl } from '@snappli/sdk';
 import { CliError, createClient, type Env, readSavedConfig, resolveApiUrl } from './config.js';
 import {
   checkConnectorResponse,
+  connectorLogs,
   DOCS_URL,
+  getConnector,
   getDelivery,
   getWebhookIntegration,
   initProject,
+  listConnectors,
   listDeliveries,
   listWebhookIntegrations,
   login,
@@ -19,6 +22,7 @@ import {
   retryDelivery,
   sendEvent,
   startReceiver,
+  testConnectorOperation,
   testWebhook,
   triggerWebhook,
   verifySignature,
@@ -79,6 +83,11 @@ Con API key (snappli login, SNAPPLI_API_KEY o --api-key; cada comando pide un pe
   snappli webhooks test <id> --yes   «Enviar prueba» del panel: llega a la URL real   (webhooks:test)
   snappli webhooks retry <deliveryId> --yes
                                      Reintenta una entrega: llega a la URL real       (webhooks:test)
+  snappli connectors list / get <id> Conectores y operaciones, sin secretos           (connectors:read)
+  snappli connectors logs <id>       Últimas 50 llamadas (de la IA y de pruebas)      (connectors:read)
+  snappli connectors test <id> <operación> [--args a.json] [--bound b.json] [--allow-write]
+                                     Ejecuta la operación como la IA y muestra lo que leería
+                                     (--allow-write en escrituras: se ejecutan de verdad) (connectors:test)
 
   snappli skill                      Imprime la skill de integración (SKILL.md)
   snappli skill install [--dir d]    La copia a .claude/skills/snappli/ (o a --dir)
@@ -104,6 +113,9 @@ const OPTIONS = {
   limit: { type: 'string' },
   page: { type: 'string' },
   response: { type: 'string' },
+  args: { type: 'string' },
+  bound: { type: 'string' },
+  'allow-write': { type: 'boolean' },
   pretty: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean', short: 'v' },
@@ -369,6 +381,30 @@ export async function run(argv: string[], io: Io, version: string): Promise<numb
       case 'webhooks retry':
         print(await retryDelivery((await keyed()).client, arg, values.yes ?? false));
         return 0;
+
+      case 'connectors list':
+        print(await listConnectors((await keyed()).client));
+        return 0;
+
+      case 'connectors get':
+        print(await getConnector((await keyed()).client, arg));
+        return 0;
+
+      case 'connectors logs':
+        print(await connectorLogs((await keyed()).client, arg));
+        return 0;
+
+      case 'connectors test': {
+        const result = await testConnectorOperation((await keyed()).client, {
+          connectorId: arg,
+          operation: arg2,
+          ...(values.args ? { args: await readJson(io, values.args) } : {}),
+          ...(values.bound ? { boundValues: await readJson(io, values.bound) } : {}),
+          allowWrite: values['allow-write'] ?? false,
+        });
+        print(result);
+        return result.ok ? 0 : 1;
+      }
 
       case 'connectors check-response': {
         if (!values.file) {

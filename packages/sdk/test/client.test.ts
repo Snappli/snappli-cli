@@ -63,6 +63,10 @@ describe('Snappli', () => {
     await snappli.webhookDeliveries.list({ status: 'FAILED', webhookIntegrationId: 'wh1' });
     await snappli.webhookDeliveries.get('d1');
     await snappli.webhookDeliveries.retry('d1');
+    await snappli.connectors.list();
+    await snappli.connectors.get('cn1');
+    await snappli.connectors.logs('cn1');
+    await snappli.connectors.testOperation('cn1', 'op1', { args: { fecha: '2026-12-01' } });
     expect(calls.map((c) => `${c.method} ${c.url.replace('http://api.test/api', '')}`)).toEqual([
       'GET /v1/me',
       'GET /v1/webhook-integrations',
@@ -72,7 +76,16 @@ describe('Snappli', () => {
       'GET /v1/webhook-deliveries?status=FAILED&webhookIntegrationId=wh1',
       'GET /v1/webhook-deliveries/d1',
       'POST /v1/webhook-deliveries/d1/retry',
+      'GET /v1/connectors',
+      'GET /v1/connectors/cn1',
+      'GET /v1/connectors/cn1/logs',
+      'POST /v1/connectors/cn1/operations/op1/test',
     ]);
+    expect(JSON.parse(calls[11]?.body ?? '')).toEqual({
+      args: { fecha: '2026-12-01' },
+      boundValues: {},
+      allowWrite: false,
+    });
     expect(JSON.parse(calls[4]?.body ?? '')).toEqual({ body: '{"data":{"id":"P-1"}}' });
   });
 

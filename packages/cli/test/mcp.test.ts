@@ -27,8 +27,11 @@ describe('servidor MCP', () => {
     const READ = [
       'snappli_account',
       'snappli_check_connector_response',
+      'snappli_connector_logs',
+      'snappli_connectors',
       'snappli_preview_mapping',
       'snappli_send_connector_event',
+      'snappli_test_connector_operation',
       'snappli_trigger_webhook',
       'snappli_verify_webhook_signature',
       'snappli_webhook_deliveries',

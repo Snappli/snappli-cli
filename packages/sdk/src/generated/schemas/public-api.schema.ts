@@ -1,5 +1,6 @@
 // Generado por scripts/sync-shared.mjs desde snappli-backend/src/shared/schemas/public-api.schema.ts. No editar.
 import { z } from 'zod';
+import type { ConnectorOperationView, ConnectorTestResult, ConnectorView } from '../connectors.js';
 import { paginationSchema } from './pagination.schema.js';
 import {
   webhookEventTypeSchema,
@@ -150,3 +151,31 @@ export const publicMappingPreviewSchema = z.object({
 });
 
 export type PublicMappingPreviewInput = z.infer<typeof publicMappingPreviewSchema>;
+
+/**
+ * Conector en la API pública: sin el secreto de autenticación (solo `authSecretConfigured`) ni los
+ * valores de las cabeceras por defecto, que pueden llevar credenciales (solo sus nombres).
+ */
+export type PublicConnector = Omit<ConnectorView, 'defaultHeaders'> & {
+  defaultHeaderNames: string[];
+};
+
+export type PublicConnectorOperation = ConnectorOperationView;
+
+/** Última llamada a un conector (de la IA o de una prueba). */
+export interface PublicConnectorCallLog {
+  id: string;
+  conversationId: string | null;
+  operation: string;
+  kind: string;
+  /** Parámetros enviados; en conectores sensibles, solo sus nombres. */
+  requestSummary: unknown;
+  responseStatus: number | null;
+  latencyMs: number;
+  error: string | null;
+  isTest: boolean;
+  createdAt: string;
+}
+
+/** `POST /v1/connectors/:id/operations/:operationId/test`: `text` es lo que leería la IA. */
+export type PublicConnectorTestResult = ConnectorTestResult;

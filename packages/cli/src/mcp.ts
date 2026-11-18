@@ -4,14 +4,18 @@ import { z } from 'zod';
 import { createClient, type Env, resolveApiUrl } from './config.js';
 import {
   checkConnectorResponse,
+  connectorLogs,
   DOCS_URL,
+  getConnector,
   getDelivery,
   getWebhookIntegration,
+  listConnectors,
   listDeliveries,
   listWebhookIntegrations,
   previewMapping,
   retryDelivery,
   sendEvent,
+  testConnectorOperation,
   testWebhook,
   triggerWebhook,
   verifySignature,
@@ -56,7 +60,7 @@ export function createMcpServer({ env, version, fetch: fetcher }: McpOptions): M
   const server = new McpServer(
     { name: 'snappli', version },
     {
-      instructions: `Herramientas para construir y probar el lado del integrador con Snappli (CRM de WhatsApp): recibir sus webhooks, exponer una API que Snappli llama como conector y enviarle eventos. Con API key (SNAPPLI_API_KEY o snappli login) también lee las integraciones de webhook y su historial de entregas: úsalo para ver qué mandó Snappli de verdad y qué respondió el servidor. Empieza por snappli_webhook_example para ver el payload, y prueba el receptor con snappli_trigger_webhook contra localhost. Las firmas de webhook son HMAC SHA-256 en hex sin prefijo de "timestamp.body"; las de eventos de conector llevan "sha256=". Documentación: ${DOCS_URL}`,
+      instructions: `Herramientas para construir y probar el lado del integrador con Snappli (CRM de WhatsApp): recibir sus webhooks, exponer una API que Snappli llama como conector y enviarle eventos. Con API key (SNAPPLI_API_KEY o snappli login) también lee las integraciones de webhook y su historial de entregas (qué mandó Snappli de verdad y qué respondió el servidor), y los conectores: su configuración, sus últimas llamadas y probar una operación contra tu API como lo haría la IA. Empieza por snappli_webhook_example para ver el payload, y prueba el receptor con snappli_trigger_webhook contra localhost. Las firmas de webhook son HMAC SHA-256 en hex sin prefijo de "timestamp.body"; las de eventos de conector llevan "sha256=". Documentación: ${DOCS_URL}`,
     },
   );
 
@@ -324,6 +328,68 @@ export function createMcpServer({ env, version, fetch: fetcher }: McpOptions): M
     },
     tool(async ({ id, response_body }: { id: string; response_body: string }) =>
       previewMapping(await keyed(), id, response_body),
+    ),
+  );
+
+  server.registerTool(
+    'snappli_connectors',
+    {
+      title: 'Conectores',
+      description: `${KEY_NOTE} con connectors:read. Sin id, lista los conectores de la organización; con id, devuelve uno. Incluye URL base, autenticación (sin el secreto: authSecretConfigured), nombres de las cabeceras por defecto (sin valores), límites y operaciones: nombre, descripción (lo que lee la IA), método, ruta, paramsSchema, boundParams, responseMap, confirmationTemplate y toolName.`,
+      inputSchema: { id: z.string().optional().describe('Id del conector.') },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    tool(async ({ id }: { id?: string }) =>
+      id ? getConnector(await keyed(), id) : listConnectors(await keyed()),
+    ),
+  );
+
+  server.registerTool(
+    'snappli_connector_logs',
+    {
+      title: 'Llamadas de un conector',
+      description: `${KEY_NOTE} con connectors:read. Últimas 50 llamadas del conector (de la IA y de pruebas): operación, parámetros (solo nombres si el conector es sensible), código HTTP, latencia y error. Úsalo para ver por qué falló una llamada de la IA a tu API.`,
+      inputSchema: { id: z.string().describe('Id del conector.') },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    tool(async ({ id }: { id: string }) => connectorLogs(await keyed(), id)),
+  );
+
+  server.registerTool(
+    'snappli_test_connector_operation',
+    {
+      title: 'Probar operación de conector',
+      description: `${KEY_NOTE} con connectors:test. Snappli ejecuta la operación como lo haría la IA, contra tu API real, y devuelve el código y el texto que leería la IA (recortado y con el responseMap aplicado). Las de lectura no cambian nada. Las de escritura se ejecutan de verdad y solo se permiten con SNAPPLI_ALLOW_WRITE=1${allowWrite ? ' (activo)' : ' (no activo: solo lecturas)'}.`,
+      inputSchema: {
+        connector_id: z.string().describe('Id del conector.'),
+        operation: z.string().describe('Id, nombre o toolName de la operación.'),
+        args: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe('Argumentos que mandaría la IA, según el paramsSchema.'),
+        bound_values: z
+          .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+          .optional()
+          .describe(
+            'Valores de ejemplo para los parámetros ligados al contacto (en la prueba no hay contacto).',
+          ),
+      },
+      annotations: { destructiveHint: true, openWorldHint: true },
+    },
+    tool(
+      async (args: {
+        connector_id: string;
+        operation: string;
+        args?: Record<string, unknown>;
+        bound_values?: Record<string, string | number | boolean>;
+      }) =>
+        testConnectorOperation(await keyed(), {
+          connectorId: args.connector_id,
+          operation: args.operation,
+          args: args.args ?? {},
+          boundValues: args.bound_values ?? {},
+          allowWrite,
+        }),
     ),
   );
 

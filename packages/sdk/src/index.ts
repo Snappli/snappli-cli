@@ -1,4 +1,5 @@
 export {
+  type ConnectorTestInput,
   type Contact,
   type ContactListParams,
   maskApiKey,
@@ -43,6 +44,10 @@ export {
   DEFAULT_WEBHOOK_SUBSCRIBED_EVENTS,
   type PaginatedResponse,
   type PublicApiMe,
+  type PublicConnector,
+  type PublicConnectorCallLog,
+  type PublicConnectorOperation,
+  type PublicConnectorTestResult,
   type PublicWebhookDelivery,
   type PublicWebhookDeliveryDetail,
   type PublicWebhookIntegration,
