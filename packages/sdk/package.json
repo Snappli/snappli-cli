@@ -1,6 +1,6 @@
 {
   "name": "@snappli/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "SDK de Snappli para integradores: verifica webhooks, descarga documentos, envía eventos de conector y lee la API pública.",
   "license": "MIT",
   "type": "module",
