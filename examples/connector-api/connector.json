@@ -1,0 +1,54 @@
+{
+  "connector": {
+    "name": "Agenda de la clínica",
+    "slug": "agenda",
+    "baseUrl": "https://api.tu-empresa.com",
+    "authType": "api_key_header",
+    "authConfig": { "headerName": "x-api-key" },
+    "timeoutMs": 8000
+  },
+  "operations": [
+    {
+      "name": "disponibilidad",
+      "description": "Horarios libres de un día. Úsala antes de proponer una cita y ofrece como máximo tres horarios.",
+      "kind": "read",
+      "method": "GET",
+      "path": "/slots?fecha={fecha}",
+      "paramsSchema": {
+        "type": "object",
+        "properties": { "fecha": { "type": "string", "description": "Fecha AAAA-MM-DD" } },
+        "required": ["fecha"]
+      },
+      "responseMap": { "fecha": "$.fecha", "horarios": "$.slots[*].hora" }
+    },
+    {
+      "name": "reservar",
+      "description": "Reserva una cita en un horario libre. Solo después de que el contacto confirme.",
+      "kind": "write",
+      "method": "POST",
+      "path": "/appointments",
+      "paramsSchema": {
+        "type": "object",
+        "properties": {
+          "fecha": { "type": "string", "description": "Fecha AAAA-MM-DD" },
+          "hora": { "type": "string", "description": "Hora HH:MM" },
+          "servicio": { "type": "string", "enum": ["consulta", "control", "limpieza"] }
+        },
+        "required": ["fecha", "hora", "servicio"]
+      },
+      "boundParams": { "telefono": "contact.phone", "nombre": "contact.name" },
+      "responseMap": { "id": "$.id", "estado": "$.status" },
+      "confirmationTemplate": "Reservo {servicio} el {fecha} a las {hora}. ¿Confirmas?"
+    },
+    {
+      "name": "mis_reservas",
+      "description": "Próximas reservas del contacto, con fecha, hora y servicio.",
+      "kind": "read",
+      "method": "GET",
+      "path": "/appointments?telefono={telefono}",
+      "boundParams": { "telefono": "contact.phone" },
+      "requiresIdentifiedContact": true,
+      "responseMap": { "reservas": "$.appointments" }
+    }
+  ]
+}

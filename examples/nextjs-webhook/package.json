@@ -1,0 +1,12 @@
+{
+  "name": "@snappli-examples/nextjs-webhook",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@snappli/sdk": "workspace:*"
+  }
+}

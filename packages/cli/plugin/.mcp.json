@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "snappli": {
+      "command": "npx",
+      "args": ["-y", "@snappli/cli", "mcp"],
+      "env": {
+        "SNAPPLI_API_KEY": "${SNAPPLI_API_KEY:-}",
+        "SNAPPLI_WEBHOOK_SECRET": "${SNAPPLI_WEBHOOK_SECRET:-}",
+        "SNAPPLI_CONNECTOR_EVENT_SECRET": "${SNAPPLI_CONNECTOR_EVENT_SECRET:-}"
+      }
+    }
+  }
+}

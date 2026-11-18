@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev:
+        dependency-type: development
+      prod:
+        dependency-type: production
+    # zod sigue la versión del backend (src/shared se copia con sync:shared).
+    ignore:
+      - dependency-name: zod
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
