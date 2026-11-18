@@ -50,7 +50,7 @@ const me = await snappli.me(); // organización y permisos de la key
 const failed = await snappli.webhookDeliveries.list({ status: 'FAILED' }); // webhooks:read
 ```
 
-`contacts.list/get` (`contacts:read`), `webhookIntegrations.list/get/previewMapping` y `webhookDeliveries.list/get` (`webhooks:read`), `webhookIntegrations.test` y `webhookDeliveries.retry` (`webhooks:test`). Un 403 trae el permiso que falta en `error.body.missingScopes`; un 429, el tiempo de espera en el mensaje.
+`contacts.list/get` (`contacts:read`), `webhookIntegrations.list/get/previewMapping` y `webhookDeliveries.list/get` (`webhooks:read`), `webhookIntegrations.test` y `webhookDeliveries.retry` (`webhooks:test`), `connectors.list/get/logs` (`connectors:read`) y `connectors.testOperation` (`connectors:test`; una escritura necesita `allowWrite: true`). Un 403 trae el permiso que falta en `error.body.missingScopes`; un 429, el tiempo de espera en el mensaje.
 
 ## Más
 

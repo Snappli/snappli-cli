@@ -217,3 +217,115 @@ describe('webhooks con key', () => {
     expect(server.received).toHaveLength(0);
   });
 });
+
+describe('conectores con key', () => {
+  const CONNECTOR = {
+    id: 'cn_1',
+    name: 'Agenda',
+    defaultHeaderNames: [],
+    operations: [
+      {
+        id: 'op_r',
+        name: 'disponibilidad',
+        toolName: 'agenda__disponibilidad',
+        kind: 'read',
+        method: 'GET',
+        path: '/slots',
+      },
+      {
+        id: 'op_w',
+        name: 'reservar',
+        toolName: 'agenda__reservar',
+        kind: 'write',
+        method: 'POST',
+        path: '/bookings',
+      },
+    ],
+  };
+
+  async function connectorApi(
+    testResult: unknown = { ok: true, status: 200, text: '{"horarios":["10:00"]}', mapped: false },
+  ) {
+    const server = await testServer((req, res) => {
+      if (req.headers.authorization !== `Bearer ${KEY}`)
+        return json(res, 401, { message: 'API key inválida' });
+      const route = `${req.method} ${req.url}`;
+      if (route === 'GET /api/v1/connectors') return json(res, 200, [CONNECTOR]);
+      if (route === 'GET /api/v1/connectors/cn_1') return json(res, 200, CONNECTOR);
+      if (route === 'GET /api/v1/connectors/cn_1/logs') return json(res, 200, [{ id: 'l1' }]);
+      if (route.startsWith('POST /api/v1/connectors/cn_1/operations/'))
+        return json(res, 201, testResult);
+      return json(res, 404, { message: 'No encontrado' });
+    });
+    close = server.close;
+    return { server, env: { SNAPPLI_API_KEY: KEY, SNAPPLI_API_URL: server.url } };
+  }
+
+  it('list, get y logs', async () => {
+    const { env } = await connectorApi();
+    expect((await cli(['connectors', 'list'], { env })).json()[0].id).toBe('cn_1');
+    expect((await cli(['connectors', 'get', 'cn_1'], { env })).json().operations).toHaveLength(2);
+    expect((await cli(['connectors', 'logs', 'cn_1'], { env })).json()).toEqual([{ id: 'l1' }]);
+  });
+
+  it('test resuelve la operación por nombre, manda args y bound y avisa sin responseMap', async () => {
+    const { server, env } = await connectorApi();
+    const result = await cli(
+      [
+        'connectors',
+        'test',
+        'cn_1',
+        'disponibilidad',
+        '--args',
+        '{"fecha":"2026-12-01"}',
+        '--bound',
+        '{"contact.phone":"+593991234567"}',
+      ],
+      { env },
+    );
+    expect(result.code).toBe(0);
+    expect(result.json()).toMatchObject({
+      operation: { id: 'op_r', kind: 'read' },
+      ok: true,
+      text: '{"horarios":["10:00"]}',
+      hints: [expect.stringContaining('responseMap')],
+    });
+    const call = server.received.at(-1);
+    expect(call?.url).toBe('/api/v1/connectors/cn_1/operations/op_r/test');
+    expect(JSON.parse(call?.body ?? '')).toEqual({
+      args: { fecha: '2026-12-01' },
+      boundValues: { 'contact.phone': '+593991234567' },
+      allowWrite: false,
+    });
+  });
+
+  it('una escritura exige --allow-write y no se ejecuta sin él', async () => {
+    const { server, env } = await connectorApi();
+    const denied = await cli(['connectors', 'test', 'cn_1', 'agenda__reservar'], { env });
+    expect(denied.error().code).toBe('write_not_allowed');
+    expect(server.received.some((r) => r.method === 'POST')).toBe(false);
+    const allowed = await cli(['connectors', 'test', 'cn_1', 'op_w', '--allow-write'], { env });
+    expect(allowed.code).toBe(0);
+    expect(JSON.parse(server.received.at(-1)?.body ?? '').allowWrite).toBe(true);
+  });
+
+  it('operación desconocida o llamada fallida', async () => {
+    const { env } = await connectorApi({
+      ok: false,
+      status: 500,
+      text: 'El sistema externo falló',
+      mapped: true,
+    });
+    const missing = await cli(['connectors', 'test', 'cn_1', 'borrar'], { env });
+    expect(missing.error()).toMatchObject({
+      code: 'operation_not_found',
+      message: expect.stringContaining('disponibilidad'),
+    });
+    const failed = await cli(['connectors', 'test', 'cn_1', 'disponibilidad'], { env });
+    expect(failed.code).toBe(1);
+    expect(failed.json()).toMatchObject({
+      ok: false,
+      hints: [expect.stringContaining('connectors logs')],
+    });
+  });
+});

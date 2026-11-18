@@ -4,6 +4,9 @@ import { SnappliError } from './errors.js';
 import type {
   PaginatedResponse,
   PublicApiMe,
+  PublicConnector,
+  PublicConnectorCallLog,
+  PublicConnectorTestResult,
   PublicWebhookDelivery,
   PublicWebhookDeliveryDetail,
   PublicWebhookIntegration,
@@ -54,6 +57,15 @@ export interface WebhookDeliveryListParams {
   status?: WebhookDeliveryStatusValue;
 }
 
+export interface ConnectorTestInput {
+  /** Argumentos que mandaría la IA (según el `paramsSchema` de la operación). */
+  args?: Record<string, unknown>;
+  /** Valores de ejemplo para los parámetros ligados al contacto (`contact.phone`…). */
+  boundValues?: Record<string, string | number | boolean>;
+  /** Una escritura se ejecuta de verdad en el sistema del cliente: hay que marcarlo. */
+  allowWrite?: boolean;
+}
+
 /** Muestra solo el principio de una key: `sk_1a2b…`. */
 export function maskApiKey(apiKey: string): string {
   return apiKey.length > 8 ? `${apiKey.slice(0, 7)}…` : '…';
@@ -84,6 +96,19 @@ export class Snappli {
     get: (id: string) => Promise<PublicWebhookDeliveryDetail>;
     /** Vuelve a encolar la entrega: llega de verdad a la URL configurada. */
     retry: (id: string) => Promise<{ success: boolean }>;
+  };
+  /** Conectores (permiso `connectors:read`; `testOperation` necesita `connectors:test`). */
+  readonly connectors: {
+    list: () => Promise<PublicConnector[]>;
+    get: (id: string) => Promise<PublicConnector>;
+    /** Últimas 50 llamadas, de la IA y de pruebas. */
+    logs: (id: string) => Promise<PublicConnectorCallLog[]>;
+    /** Ejecuta la operación como la IA, contra el sistema del cliente. */
+    testOperation: (
+      id: string,
+      operationId: string,
+      input?: ConnectorTestInput,
+    ) => Promise<PublicConnectorTestResult>;
   };
   readonly #apiKey: string;
   readonly #fetch: typeof fetch;
@@ -123,6 +148,19 @@ export class Snappli {
         this.request('GET', '/v1/webhook-deliveries', { query: { ...params } }),
       get: (id) => this.request('GET', `/v1/webhook-deliveries/${path(id)}`),
       retry: (id) => this.request('POST', `/v1/webhook-deliveries/${path(id)}/retry`),
+    };
+    this.connectors = {
+      list: () => this.request('GET', '/v1/connectors'),
+      get: (id) => this.request('GET', `/v1/connectors/${path(id)}`),
+      logs: (id) => this.request('GET', `/v1/connectors/${path(id)}/logs`),
+      testOperation: (id, operationId, input = {}) =>
+        this.request('POST', `/v1/connectors/${path(id)}/operations/${path(operationId)}/test`, {
+          body: {
+            args: input.args ?? {},
+            boundValues: input.boundValues ?? {},
+            allowWrite: input.allowWrite ?? false,
+          },
+        }),
     };
   }
 

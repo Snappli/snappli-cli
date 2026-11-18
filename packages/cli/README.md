@@ -22,6 +22,8 @@ npx @snappli/cli --help
 | `snappli webhooks deliveries [--integration id] [--status FAILED]` / `deliveries get <id>` | Historial de entregas: payload, respuesta y mapeo (`webhooks:read`) |
 | `snappli webhooks mapping-preview <id> --response r.json` | Qué rellenaría el mapeo guardado (`webhooks:read`) |
 | `snappli webhooks test <id> --yes` / `retry <deliveryId> --yes` | Envían de verdad a la URL configurada (`webhooks:test`) |
+| `snappli connectors list` / `get <id>` / `logs <id>` | Conectores, operaciones y últimas llamadas (`connectors:read`) |
+| `snappli connectors test <id> <operación> [--args a.json] [--bound b.json] [--allow-write]` | Ejecuta la operación como la IA y muestra lo que leería; escrituras con `--allow-write` (`connectors:test`) |
 | `snappli skill [install]` | La skill de integración |
 | `snappli mcp` | Servidor MCP por stdio |
 
@@ -47,7 +49,7 @@ Para Cursor y otros clientes:
 
 Herramientas sin key: `snappli_webhook_example`, `snappli_trigger_webhook`, `snappli_verify_webhook_signature`, `snappli_send_connector_event` (a Snappli solo con `SNAPPLI_ALLOW_WRITE=1`) y `snappli_check_connector_response`.
 
-Con key (`SNAPPLI_API_KEY` o la de `snappli login`): `snappli_account`, `snappli_webhook_integrations`, `snappli_webhook_deliveries` y `snappli_preview_mapping`. Con `SNAPPLI_ALLOW_WRITE=1` además `snappli_test_webhook` y `snappli_retry_delivery`, que envían de verdad a la URL configurada.
+Con key (`SNAPPLI_API_KEY` o la de `snappli login`): `snappli_account`, `snappli_webhook_integrations`, `snappli_webhook_deliveries`, `snappli_preview_mapping`, `snappli_connectors`, `snappli_connector_logs` y `snappli_test_connector_operation` (las escrituras solo con `SNAPPLI_ALLOW_WRITE=1`). Con `SNAPPLI_ALLOW_WRITE=1` además `snappli_test_webhook` y `snappli_retry_delivery`, que envían de verdad a la URL configurada.
 
 También es un plugin de Claude Code (carpeta `plugin/`), con la skill y el servidor MCP.
 
