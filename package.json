@@ -7,10 +7,10 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "pnpm -r --filter './packages/*' run build",
+    "build": "pnpm -r --filter \"@snappli/*\" run build",
     "typecheck": "pnpm -r run typecheck",
-    "test": "pnpm -r --filter './packages/*' run test",
-    "test:examples": "pnpm -r --filter './examples/*' run test",
+    "test": "pnpm -r --filter \"@snappli/*\" run test",
+    "test:examples": "pnpm -r --filter \"@snappli-examples/*\" run test",
     "lint": "biome check .",
     "format": "biome check --write .",
     "sync:shared": "node scripts/sync-shared.mjs",
