@@ -1,5 +1,11 @@
 # @snappli/sdk
 
+## 0.3.0
+
+### Minor Changes
+
+- a1d4554: Conectores con API key: `connectors.list/get/logs/testOperation` en el SDK; `connectors list/get/logs/test` en el CLI (la operación por id o nombre; escrituras con `--allow-write`); herramientas MCP `snappli_connectors`, `snappli_connector_logs` y `snappli_test_connector_operation` (escrituras solo con `SNAPPLI_ALLOW_WRITE=1`).
+
 ## 0.2.0
 
 ### Minor Changes
