@@ -1,6 +1,6 @@
 {
   "name": "@snappli/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "CLI y servidor MCP de Snappli para integradores: prueba webhooks, eventos de conector y respuestas de tu API desde la terminal o tu agente.",
   "license": "MIT",
   "type": "module",
