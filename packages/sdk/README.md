@@ -40,6 +40,18 @@ const { result } = await sendConnectorEvent({
 // result.status: 'sent' | 'ignored' | 'failed'
 ```
 
+## API pública
+
+```ts
+import { Snappli } from '@snappli/sdk';
+
+const snappli = new Snappli(process.env.SNAPPLI_API_KEY!);
+const me = await snappli.me(); // organización y permisos de la key
+const failed = await snappli.webhookDeliveries.list({ status: 'FAILED' }); // webhooks:read
+```
+
+`contacts.list/get` (`contacts:read`), `webhookIntegrations.list/get/previewMapping` y `webhookDeliveries.list/get` (`webhooks:read`), `webhookIntegrations.test` y `webhookDeliveries.retry` (`webhooks:test`). Un 403 trae el permiso que falta en `error.body.missingScopes`; un 429, el tiempo de espera en el mensaje.
+
 ## Más
 
 | Función | Para qué |

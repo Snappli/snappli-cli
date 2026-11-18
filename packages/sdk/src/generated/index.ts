@@ -2,4 +2,5 @@
 export * from './connectors.js';
 export * from './contact-segments.js';
 export * from './schemas/pagination.schema.js';
+export * from './schemas/public-api.schema.js';
 export * from './schemas/webhook-integration.schema.js';

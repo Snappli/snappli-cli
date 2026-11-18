@@ -23,16 +23,52 @@ async function connect(env: Record<string, string> = {}, fetcher?: typeof fetch)
 }
 
 describe('servidor MCP', () => {
-  it('registra las herramientas de la fase 1', async () => {
-    const { client } = await connect();
-    const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([
+  it('registra las herramientas; probar y reintentar solo con SNAPPLI_ALLOW_WRITE=1', async () => {
+    const READ = [
+      'snappli_account',
       'snappli_check_connector_response',
+      'snappli_preview_mapping',
       'snappli_send_connector_event',
       'snappli_trigger_webhook',
       'snappli_verify_webhook_signature',
+      'snappli_webhook_deliveries',
       'snappli_webhook_example',
+      'snappli_webhook_integrations',
+    ];
+    const { client } = await connect();
+    expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual(READ);
+    const { client: writer } = await connect({ SNAPPLI_ALLOW_WRITE: '1' });
+    expect((await writer.listTools()).tools.map((t) => t.name).sort()).toEqual(
+      [...READ, 'snappli_retry_delivery', 'snappli_test_webhook'].sort(),
+    );
+  });
+
+  it('herramientas con key: usan SNAPPLI_API_KEY y avisan si falta', async () => {
+    const key = `sk_${'d4'.repeat(24)}`;
+    const urls: string[] = [];
+    const fetcher = (async (url: URL, init: RequestInit) => {
+      urls.push(`${init.method} ${String(url)}`);
+      expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${key}`);
+      return Response.json({ data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 1 } });
+    }) as unknown as typeof fetch;
+    const { call } = await connect(
+      { SNAPPLI_API_KEY: key, SNAPPLI_API_URL: 'http://api.test', SNAPPLI_ALLOW_WRITE: '1' },
+      fetcher,
+    );
+    expect(
+      (await call('snappli_webhook_deliveries', { status: 'FAILED', webhook_integration_id: 'wh' }))
+        .isError,
+    ).toBe(false);
+    await call('snappli_retry_delivery', { id: 'd_1' });
+    expect(urls).toEqual([
+      'GET http://api.test/api/v1/webhook-deliveries?webhookIntegrationId=wh&status=FAILED',
+      'POST http://api.test/api/v1/webhook-deliveries/d_1/retry',
     ]);
+
+    const { call: noKey } = await connect({ XDG_CONFIG_HOME: '/nonexistent-snappli' });
+    const missing = await noKey('snappli_webhook_integrations', {});
+    expect(missing.isError).toBe(true);
+    expect(missing.value.error.code).toBe('missing_api_key');
   });
 
   it('ejemplo, trigger y revisión de respuesta', async () => {

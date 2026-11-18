@@ -3,17 +3,27 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { connectorEventsUrl } from '@snappli/sdk';
-import { CliError, type Env, resolveApiUrl } from './config.js';
+import { CliError, createClient, type Env, readSavedConfig, resolveApiUrl } from './config.js';
 import {
   checkConnectorResponse,
   DOCS_URL,
+  getDelivery,
+  getWebhookIntegration,
   initProject,
+  listDeliveries,
+  listWebhookIntegrations,
+  login,
+  logout,
+  previewMapping,
   type ReceivedDelivery,
+  retryDelivery,
   sendEvent,
   startReceiver,
+  testWebhook,
   triggerWebhook,
   verifySignature,
   webhookExample,
+  whoami,
 } from './operations.js';
 import { formatError, toJson } from './output.js';
 
@@ -24,6 +34,8 @@ export interface Io {
   stderr: (text: string) => void;
   /** Todo stdin como texto (para `--file -`). */
   readStdin: () => Promise<string>;
+  /** stdin es una terminal (nada canalizado): `login` no espera a leerlo. */
+  stdinIsTTY?: boolean;
   fetch?: typeof fetch;
   /** Arranca el servidor MCP por stdio; se inyecta para no cargarlo en cada comando. */
   startMcp?: () => Promise<void>;
@@ -51,6 +63,23 @@ Uso:
       Envía un evento firmado de conector a Snappli (--yes si no es localhost: manda un WhatsApp real)
   snappli connectors check-response --file r.json [--map m.json]
       Lo que leería la IA de la respuesta de tu API con ese responseMap
+
+Con API key (snappli login, SNAPPLI_API_KEY o --api-key; cada comando pide un permiso de la key):
+  snappli login [--api-key sk_…]     Valida la key y la guarda (sin --api-key la lee de SNAPPLI_API_KEY o stdin)
+  snappli logout                     Borra la key guardada
+  snappli whoami                     Organización, key y permisos
+  snappli webhooks list              Integraciones de webhook, sin secretos          (webhooks:read)
+  snappli webhooks get <id>          Una integración                                 (webhooks:read)
+  snappli webhooks deliveries [--integration id] [--status FAILED] [--limit 20] [--page 1]
+                                     Historial de entregas                           (webhooks:read)
+  snappli webhooks deliveries get <id>
+                                     Una entrega: cabeceras, respuesta y mapeo       (webhooks:read)
+  snappli webhooks mapping-preview <id> --response r.json
+                                     Qué rellenaría el mapeo guardado con esa respuesta (webhooks:read)
+  snappli webhooks test <id> --yes   «Enviar prueba» del panel: llega a la URL real   (webhooks:test)
+  snappli webhooks retry <deliveryId> --yes
+                                     Reintenta una entrega: llega a la URL real       (webhooks:test)
+
   snappli skill                      Imprime la skill de integración (SKILL.md)
   snappli skill install [--dir d]    La copia a .claude/skills/snappli/ (o a --dir)
   snappli mcp                        Servidor MCP por stdio
@@ -59,16 +88,22 @@ Eventos: contact.stage.entered, contact.webhook.manual, contact.created, contact
          contact.tag.assigned, conversation.escalated
 
 Opciones globales:
-  --api-url <url>   Host de la API (por defecto SNAPPLI_API_URL o https://api.snappli.io)
+  --api-key <sk_…>  API key (por defecto SNAPPLI_API_KEY o la guardada con login)
+  --api-url <url>   Host de la API (por defecto SNAPPLI_API_URL, el de login o https://api.snappli.io)
   --pretty          JSON indentado
   -h, --help · -v, --version
 
-Variables: SNAPPLI_WEBHOOK_SECRET (--secret de webhooks), SNAPPLI_CONNECTOR_EVENT_SECRET (--secret de events).
+Variables: SNAPPLI_API_KEY, SNAPPLI_WEBHOOK_SECRET (--secret de webhooks), SNAPPLI_CONNECTOR_EVENT_SECRET (--secret de events).
 La salida es JSON en stdout; los errores, JSON en stderr con código de salida 1.
 Documentación: ${DOCS_URL}`;
 
 const OPTIONS = {
+  'api-key': { type: 'string' },
   'api-url': { type: 'string' },
+  integration: { type: 'string' },
+  limit: { type: 'string' },
+  page: { type: 'string' },
+  response: { type: 'string' },
   pretty: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean', short: 'v' },
@@ -113,8 +148,16 @@ export async function run(argv: string[], io: Io, version: string): Promise<numb
       allowPositionals: true,
     });
     pretty = values.pretty ?? false;
-    const [command, sub, arg] = positionals;
+    const [command, sub, arg, arg2] = positionals;
     const print = (value: unknown) => io.stdout(toJson(value, pretty));
+    const keyed = () =>
+      createClient({
+        env: io.env,
+        apiKey: values['api-key'],
+        apiUrl: values['api-url'],
+        fetch: io.fetch,
+        version,
+      });
     const timeoutMs = values.timeout ? seconds(values.timeout, '--timeout') * 1000 : undefined;
 
     if (values.version) {
@@ -233,6 +276,99 @@ export async function run(argv: string[], io: Io, version: string): Promise<numb
         print(result);
         return result.result.status === 'failed' ? 1 : 0;
       }
+
+      case 'login': {
+        const apiKey = (
+          values['api-key'] ??
+          io.env.SNAPPLI_API_KEY ??
+          (io.stdinIsTTY ? '' : await io.readStdin())
+        ).trim();
+        if (!apiKey) {
+          throw new CliError(
+            'Pasa la key con --api-key, SNAPPLI_API_KEY o por stdin (echo $KEY | snappli login).',
+            'missing_api_key',
+          );
+        }
+        const saved = await readSavedConfig(io.env);
+        const apiUrl = resolveApiUrl(io.env, values['api-url'], saved.apiUrl);
+        const { client } = await createClient({
+          env: io.env,
+          apiKey,
+          apiUrl,
+          fetch: io.fetch,
+          version,
+        });
+        print(
+          await login(client, io.env, {
+            apiKey,
+            ...(values['api-url'] || io.env.SNAPPLI_API_URL ? { apiUrl } : {}),
+          }),
+        );
+        return 0;
+      }
+
+      case 'logout':
+        print(await logout(io.env));
+        return 0;
+
+      case 'whoami': {
+        const { client, source, apiUrl } = await keyed();
+        print(await whoami(client, source, apiUrl));
+        return 0;
+      }
+
+      case 'webhooks list':
+        print(await listWebhookIntegrations((await keyed()).client));
+        return 0;
+
+      case 'webhooks get':
+        print(await getWebhookIntegration((await keyed()).client, arg));
+        return 0;
+
+      case 'webhooks deliveries': {
+        const { client } = await keyed();
+        if (arg === 'get') {
+          print(await getDelivery(client, arg2));
+          return 0;
+        }
+        if (arg) {
+          throw new CliError(
+            `Uso: snappli webhooks deliveries [--integration id] [--status S] o deliveries get <id> (no «${arg}»).`,
+            'invalid_arguments',
+          );
+        }
+        print(
+          await listDeliveries(client, {
+            webhookIntegrationId: values.integration,
+            status: values.status,
+            ...(values.limit ? { limit: Number(values.limit) } : {}),
+            ...(values.page ? { page: Number(values.page) } : {}),
+          }),
+        );
+        return 0;
+      }
+
+      case 'webhooks mapping-preview': {
+        if (!values.response) {
+          throw new CliError(
+            'Falta --response <respuesta.json> (o --response - para stdin).',
+            'missing_file',
+          );
+        }
+        const body = await readText(io, values.response);
+        print(await previewMapping((await keyed()).client, arg, body));
+        return 0;
+      }
+
+      case 'webhooks test': {
+        const result = await testWebhook((await keyed()).client, arg, values.yes ?? false);
+        print(result);
+        return result.success ? 0 : 1;
+      }
+
+      case 'webhooks retry':
+        print(await retryDelivery((await keyed()).client, arg, values.yes ?? false));
+        return 0;
 
       case 'connectors check-response': {
         if (!values.file) {

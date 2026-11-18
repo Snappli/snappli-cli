@@ -5,6 +5,7 @@ export {
   SDK_VERSION,
   Snappli,
   type SnappliOptions,
+  type WebhookDeliveryListParams,
 } from './client.js';
 export {
   buildConnectorEvent,
@@ -25,6 +26,8 @@ export {
 } from './documents.js';
 export { SnappliError, SnappliWebhookError, type WebhookErrorReason } from './errors.js';
 export {
+  API_KEY_SCOPES,
+  type ApiKeyScope,
   CONNECTOR_AUTH_TYPES,
   CONNECTOR_BOUND_SOURCES,
   CONNECTOR_HTTP_METHODS,
@@ -39,11 +42,18 @@ export {
   connectorOperationInputSchema,
   DEFAULT_WEBHOOK_SUBSCRIBED_EVENTS,
   type PaginatedResponse,
+  type PublicApiMe,
+  type PublicWebhookDelivery,
+  type PublicWebhookDeliveryDetail,
+  type PublicWebhookIntegration,
+  type PublicWebhookTestResult,
+  WEBHOOK_DELIVERY_STATUSES,
   WEBHOOK_FILE_URL_TTL_DEFAULT_HOURS,
   WEBHOOK_FILE_URL_TTL_MAX_HOURS,
   type WebhookContactEventPayload,
   type WebhookConversationEscalatedPayload,
   type WebhookConversationPayload,
+  type WebhookDeliveryStatusValue,
   type WebhookMappingResult,
   type WebhookPipelineEventPayload,
   type WebhookPipelinePayload,
