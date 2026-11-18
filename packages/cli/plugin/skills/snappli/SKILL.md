@@ -194,7 +194,15 @@ Muestra el código, el tiempo, la respuesta y avisos; `--repeat` reenvía la mis
 - `npx @snappli/cli events send pedido.enviado --to http://localhost:4000/mock --secret … --data '{"telefono":"+593…"}'`: prueba la firma contra un mock. Contra Snappli exige `--yes`, porque manda un WhatsApp real.
 - `npx @snappli/cli connectors check-response --file r.json --map m.json`: lo que leería la IA.
 
-Después, en el panel: **Enviar prueba** en la integración y el historial de entregas (código, respuesta y resultado del mapeo).
+Con una API key de **Configuración → API** (`npx @snappli/cli login`, `SNAPPLI_API_KEY` o `--api-key`) también puedes ver lo que pasó en Snappli de verdad. Cada key tiene permisos, que se eligen al crearla; un 403 dice cuál falta:
+
+- `npx @snappli/cli whoami`: organización, permisos de la key y los que le faltan.
+- `npx @snappli/cli webhooks list` / `webhooks get <id>`: integraciones, sin secretos (`webhooks:read`).
+- `npx @snappli/cli webhooks deliveries --status FAILED` / `deliveries get <id>`: el payload real, qué respondió tu servidor y el resultado del mapeo (`webhooks:read`). Ese payload, guardado en un archivo, se reenvía a tu servidor local con `webhooks trigger --file`.
+- `npx @snappli/cli webhooks mapping-preview <id> --response r.json`: qué rellenaría el mapeo guardado (`webhooks:read`).
+- `npx @snappli/cli webhooks test <id> --yes` y `webhooks retry <deliveryId> --yes`: envían de verdad a la URL configurada (`webhooks:test`). Pide confirmación al usuario antes de usarlos.
+
+En el panel están las mismas acciones: **Enviar prueba** en la integración y el historial de entregas.
 
 ## Paso a producción
 

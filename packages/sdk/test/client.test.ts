@@ -43,6 +43,65 @@ describe('Snappli', () => {
       message: 'Tu plan no incluye la API',
     });
   });
+
+  it('webhooks: rutas, métodos y cuerpo de la vista previa', async () => {
+    const calls: Array<{ method: string; url: string; body?: string }> = [];
+    const fetcher = (async (url: URL, init: RequestInit) => {
+      calls.push({
+        method: String(init.method),
+        url: String(url),
+        ...(init.body ? { body: String(init.body) } : {}),
+      });
+      return Response.json({ ok: true });
+    }) as unknown as typeof fetch;
+    const snappli = new Snappli(KEY, { baseUrl: 'http://api.test', fetch: fetcher });
+    await snappli.me();
+    await snappli.webhookIntegrations.list();
+    await snappli.webhookIntegrations.get('wh 1');
+    await snappli.webhookIntegrations.test('wh1');
+    await snappli.webhookIntegrations.previewMapping('wh1', '{"data":{"id":"P-1"}}');
+    await snappli.webhookDeliveries.list({ status: 'FAILED', webhookIntegrationId: 'wh1' });
+    await snappli.webhookDeliveries.get('d1');
+    await snappli.webhookDeliveries.retry('d1');
+    expect(calls.map((c) => `${c.method} ${c.url.replace('http://api.test/api', '')}`)).toEqual([
+      'GET /v1/me',
+      'GET /v1/webhook-integrations',
+      'GET /v1/webhook-integrations/wh%201',
+      'POST /v1/webhook-integrations/wh1/test',
+      'POST /v1/webhook-integrations/wh1/mapping-preview',
+      'GET /v1/webhook-deliveries?status=FAILED&webhookIntegrationId=wh1',
+      'GET /v1/webhook-deliveries/d1',
+      'POST /v1/webhook-deliveries/d1/retry',
+    ]);
+    expect(JSON.parse(calls[4]?.body ?? '')).toEqual({ body: '{"data":{"id":"P-1"}}' });
+  });
+
+  it('403 sin permiso y 429 con Retry-After', async () => {
+    const forbidden = (async () =>
+      Response.json(
+        {
+          statusCode: 403,
+          message: 'La API key no tiene el permiso webhooks:read',
+          missingScopes: ['webhooks:read'],
+        },
+        { status: 403 },
+      )) as unknown as typeof fetch;
+    await expect(
+      new Snappli(KEY, { fetch: forbidden }).webhookIntegrations.list(),
+    ).rejects.toMatchObject({
+      code: 'forbidden',
+      body: { missingScopes: ['webhooks:read'] },
+    });
+    const limited = (async () =>
+      Response.json(
+        { statusCode: 429, message: 'Demasiadas solicitudes.' },
+        { status: 429, headers: { 'Retry-After': '30' } },
+      )) as unknown as typeof fetch;
+    await expect(new Snappli(KEY, { fetch: limited }).me()).rejects.toMatchObject({
+      code: 'rate_limited',
+      message: 'Demasiadas solicitudes. Reintenta en 30 s.',
+    });
+  });
 });
 
 describe('downloadDocument', () => {

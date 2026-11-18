@@ -4,10 +4,23 @@ import { CliError } from './config.js';
 /** Error como JSON: `{ error: { code, message, … } }`. */
 export function formatError(error: unknown) {
   if (error instanceof SnappliError) {
+    const missingScopes =
+      error.status === 403 && error.body && typeof error.body === 'object'
+        ? (error.body as { missingScopes?: unknown }).missingScopes
+        : undefined;
     return {
       error: {
         code: error.code,
         message: error.message,
+        ...(Array.isArray(missingScopes)
+          ? {
+              missingScopes,
+              hint: 'Crea una key con ese permiso en Configuración → API del panel (los permisos no se pueden cambiar en una key existente).',
+            }
+          : {}),
+        ...(error.status === 401
+          ? { hint: 'La key no es válida o fue revocada. Usa snappli login con una key activa.' }
+          : {}),
         ...(error.status !== undefined ? { status: error.status } : {}),
         ...(error.body !== undefined && error.body !== '' ? { response: error.body } : {}),
       },

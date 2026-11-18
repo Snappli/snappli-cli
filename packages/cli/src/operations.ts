@@ -4,27 +4,39 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
 import {
+  API_KEY_SCOPES,
   CONNECTOR_RESPONSE_MAX_BYTES,
   checkWebhookSignature,
   constructEvent,
   isWebhookEvent,
+  type PublicApiMe,
   previewResponseMapping,
   readJsonPath,
+  type Snappli,
   SnappliWebhookError,
   sendConnectorEvent,
   shapeConnectorResponse,
   signWebhookPayload,
   verifyWebhook,
+  WEBHOOK_DELIVERY_STATUSES,
   WEBHOOK_EVENT_TYPES,
   WEBHOOK_TIMEOUT_MS,
   WEBHOOK_TOLERANCE_SECONDS,
+  type WebhookDeliveryStatusValue,
   type WebhookEvent,
   type WebhookEventType,
   webhookDeliveryId,
   webhookHeaders,
   webhookResponseMappingSchema,
 } from '@snappli/sdk';
-import { CliError } from './config.js';
+import {
+  type ApiKeySource,
+  CliError,
+  configFile,
+  deleteConfig,
+  type Env,
+  saveConfig,
+} from './config.js';
 import { exampleWebhook, newDeliveryId, SAMPLE_FILES } from './fixtures.js';
 
 export const DOCS_URL = 'https://docs.snappli.io/desarrolladores/herramientas/';
@@ -748,4 +760,111 @@ export function isGitignored(gitignore: string, file: string): boolean {
     if (regex.test(file) || (!pattern.includes('/') && regex.test(name))) ignored = !negated;
   }
   return ignored;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Con API key: cuenta, integraciones de webhook y entregas
+
+/** Valida la key con `GET /v1/me` y la guarda en la config del usuario (0600). */
+export async function login(
+  client: Snappli,
+  env: Env,
+  options: { apiKey: string; apiUrl?: string | undefined },
+) {
+  const me = await client.me();
+  const savedTo = await saveConfig(env, {
+    apiKey: options.apiKey,
+    ...(options.apiUrl ? { apiUrl: options.apiUrl } : {}),
+  });
+  return { ...describeAccount(me), savedTo };
+}
+
+export async function logout(env: Env) {
+  return { loggedOut: await deleteConfig(env), file: configFile(env) };
+}
+
+export async function whoami(client: Snappli, source: ApiKeySource, apiUrl: string) {
+  return { ...describeAccount(await client.me()), apiUrl, keySource: source };
+}
+
+function describeAccount(me: PublicApiMe) {
+  const missing = API_KEY_SCOPES.filter((scope) => !me.apiKey.scopes.includes(scope));
+  return {
+    organization: me.organization,
+    apiKey: { ...me.apiKey, key: `${me.apiKey.keyPrefix}…` },
+    rateLimitPerMin: me.rateLimitPerMin,
+    ...(missing.length ? { missingScopes: missing } : {}),
+  };
+}
+
+export function listWebhookIntegrations(client: Snappli) {
+  return client.webhookIntegrations.list();
+}
+
+export function getWebhookIntegration(client: Snappli, id: string | undefined) {
+  return client.webhookIntegrations.get(requireId(id, 'el id de la integración'));
+}
+
+export interface DeliveryFilters {
+  webhookIntegrationId?: string | undefined;
+  status?: string | undefined;
+  limit?: number | undefined;
+  page?: number | undefined;
+}
+
+export function listDeliveries(client: Snappli, filters: DeliveryFilters = {}) {
+  const status = filters.status?.toUpperCase();
+  if (status && !(WEBHOOK_DELIVERY_STATUSES as readonly string[]).includes(status)) {
+    throw new CliError(
+      `Estado «${filters.status}» no válido. Estados: ${WEBHOOK_DELIVERY_STATUSES.join(', ')}.`,
+      'invalid_status',
+    );
+  }
+  for (const [name, value, max] of [
+    ['--limit', filters.limit, 100],
+    ['--page', filters.page, Number.MAX_SAFE_INTEGER],
+  ] as const) {
+    if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > max)) {
+      throw new CliError(`${name} debe ser un entero entre 1 y ${max}.`, 'invalid_number');
+    }
+  }
+  return client.webhookDeliveries.list({
+    ...(filters.webhookIntegrationId ? { webhookIntegrationId: filters.webhookIntegrationId } : {}),
+    ...(status ? { status: status as WebhookDeliveryStatusValue } : {}),
+    ...(filters.limit ? { limit: filters.limit } : {}),
+    ...(filters.page ? { page: filters.page } : {}),
+  });
+}
+
+export function getDelivery(client: Snappli, id: string | undefined) {
+  return client.webhookDeliveries.get(requireId(id, 'el id de la entrega'));
+}
+
+const REAL_SEND =
+  'llega de verdad a la URL configurada en Snappli. Repite con --yes (CLI) o con SNAPPLI_ALLOW_WRITE=1 (MCP) si es lo que quieres.';
+
+/** El botón «Enviar prueba» del panel. */
+export function testWebhook(client: Snappli, id: string | undefined, allowWrite: boolean) {
+  const integrationId = requireId(id, 'el id de la integración');
+  if (!allowWrite) throw new CliError(`La prueba ${REAL_SEND}`, 'write_not_allowed');
+  return client.webhookIntegrations.test(integrationId);
+}
+
+export async function retryDelivery(client: Snappli, id: string | undefined, allowWrite: boolean) {
+  const deliveryId = requireId(id, 'el id de la entrega');
+  if (!allowWrite) throw new CliError(`El reintento ${REAL_SEND}`, 'write_not_allowed');
+  return { deliveryId, ...(await client.webhookDeliveries.retry(deliveryId)) };
+}
+
+/** Qué rellenaría el mapeo guardado de la integración con esa respuesta. */
+export function previewMapping(client: Snappli, id: string | undefined, responseBody: string) {
+  return client.webhookIntegrations.previewMapping(
+    requireId(id, 'el id de la integración'),
+    responseBody,
+  );
+}
+
+function requireId(value: string | undefined, what: string): string {
+  if (!value) throw new CliError(`Falta ${what}.`, 'missing_id');
+  return value;
 }

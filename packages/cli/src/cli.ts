@@ -13,6 +13,7 @@ const code = await run(
     stdout: (s) => process.stdout.write(s),
     stderr: (s) => process.stderr.write(s),
     readStdin: () => text(process.stdin),
+    stdinIsTTY: Boolean(process.stdin.isTTY),
     startMcp: async () => {
       const [{ createMcpServer }, { StdioServerTransport }] = await Promise.all([
         import('./mcp.js'),

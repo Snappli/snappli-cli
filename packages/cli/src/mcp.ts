@@ -1,15 +1,23 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { connectorEventsUrl } from '@snappli/sdk';
+import { connectorEventsUrl, WEBHOOK_DELIVERY_STATUSES } from '@snappli/sdk';
 import { z } from 'zod';
-import { type Env, resolveApiUrl } from './config.js';
+import { createClient, type Env, resolveApiUrl } from './config.js';
 import {
   checkConnectorResponse,
   DOCS_URL,
+  getDelivery,
+  getWebhookIntegration,
+  listDeliveries,
+  listWebhookIntegrations,
+  previewMapping,
+  retryDelivery,
   sendEvent,
+  testWebhook,
   triggerWebhook,
   verifySignature,
   WEBHOOK_EVENT_TYPES,
   webhookExample,
+  whoami,
 } from './operations.js';
 import { formatError } from './output.js';
 
@@ -38,16 +46,17 @@ const tool =
   };
 
 /**
- * Servidor MCP con las mismas operaciones que el CLI. Ninguna herramienta de esta fase necesita API
- * key. Lo que tiene efectos reales en Snappli (un evento a una URL que no es local manda un
- * WhatsApp) exige `SNAPPLI_ALLOW_WRITE=1`.
+ * Servidor MCP con las mismas operaciones que el CLI. Las de lectura de la cuenta usan la key de
+ * `SNAPPLI_API_KEY` o la guardada con `snappli login`. Lo que tiene efectos reales (un evento a una
+ * URL que no es local manda un WhatsApp; probar o reintentar un webhook llega a la URL del
+ * cliente) exige `SNAPPLI_ALLOW_WRITE=1`; probar y reintentar ni se registran sin él.
  */
 export function createMcpServer({ env, version, fetch: fetcher }: McpOptions): McpServer {
   const allowWrite = env.SNAPPLI_ALLOW_WRITE === '1';
   const server = new McpServer(
     { name: 'snappli', version },
     {
-      instructions: `Herramientas para construir y probar el lado del integrador con Snappli (CRM de WhatsApp): recibir sus webhooks, exponer una API que Snappli llama como conector y enviarle eventos. Empieza por snappli_webhook_example para ver el payload, y prueba el receptor con snappli_trigger_webhook contra localhost. Las firmas de webhook son HMAC SHA-256 en hex sin prefijo de "timestamp.body"; las de eventos de conector llevan "sha256=". Documentación: ${DOCS_URL}`,
+      instructions: `Herramientas para construir y probar el lado del integrador con Snappli (CRM de WhatsApp): recibir sus webhooks, exponer una API que Snappli llama como conector y enviarle eventos. Con API key (SNAPPLI_API_KEY o snappli login) también lee las integraciones de webhook y su historial de entregas: úsalo para ver qué mandó Snappli de verdad y qué respondió el servidor. Empieza por snappli_webhook_example para ver el payload, y prueba el receptor con snappli_trigger_webhook contra localhost. Las firmas de webhook son HMAC SHA-256 en hex sin prefijo de "timestamp.body"; las de eventos de conector llevan "sha256=". Documentación: ${DOCS_URL}`,
     },
   );
 
@@ -238,6 +247,109 @@ export function createMcpServer({ env, version, fetch: fetcher }: McpOptions): M
       checkConnectorResponse(body, response_map),
     ),
   );
+
+  const keyed = async () => (await createClient({ env, fetch: fetcher, version })).client;
+  const KEY_NOTE = 'Necesita API key (SNAPPLI_API_KEY o snappli login)';
+
+  server.registerTool(
+    'snappli_account',
+    {
+      title: 'Cuenta de Snappli',
+      description: `${KEY_NOTE}. Organización, nombre y permisos de la key, permisos que le faltan y límite por minuto. Úsalo primero para saber qué herramientas con key funcionarán.`,
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    tool(async () => {
+      const { client, source, apiUrl } = await createClient({ env, fetch: fetcher, version });
+      return whoami(client, source, apiUrl);
+    }),
+  );
+
+  server.registerTool(
+    'snappli_webhook_integrations',
+    {
+      title: 'Integraciones de webhook',
+      description: `${KEY_NOTE} con webhooks:read. Sin id, lista las integraciones de webhook de la organización; con id, devuelve una. Nunca incluye el secreto ni el valor de la cabecera de autenticación (solo hasSecret y hasAuthHeaderValue). Incluye eventos suscritos, filtros y el mapeo de respuesta.`,
+      inputSchema: { id: z.string().optional().describe('Id de la integración.') },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    tool(async ({ id }: { id?: string }) =>
+      id ? getWebhookIntegration(await keyed(), id) : listWebhookIntegrations(await keyed()),
+    ),
+  );
+
+  server.registerTool(
+    'snappli_webhook_deliveries',
+    {
+      title: 'Entregas de webhook',
+      description: `${KEY_NOTE} con webhooks:read. Sin id, el historial de entregas (más recientes primero) con filtros; con id, el detalle de una: payload real enviado, cabeceras (secretos ocultos), código y cuerpo de la respuesta del servidor, intentos y mappingResult. El payload sirve como entrada para snappli_trigger_webhook contra localhost.`,
+      inputSchema: {
+        id: z.string().optional().describe('Id de la entrega para ver el detalle.'),
+        webhook_integration_id: z.string().optional().describe('Filtrar por integración.'),
+        status: z.enum(WEBHOOK_DELIVERY_STATUSES).optional().describe('Filtrar por estado.'),
+        limit: z.number().int().min(1).max(100).optional().describe('Por defecto 20.'),
+        page: z.number().int().min(1).optional(),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    tool(
+      async (args: {
+        id?: string;
+        webhook_integration_id?: string;
+        status?: string;
+        limit?: number;
+        page?: number;
+      }) =>
+        args.id
+          ? getDelivery(await keyed(), args.id)
+          : listDeliveries(await keyed(), {
+              webhookIntegrationId: args.webhook_integration_id,
+              status: args.status,
+              limit: args.limit,
+              page: args.page,
+            }),
+    ),
+  );
+
+  server.registerTool(
+    'snappli_preview_mapping',
+    {
+      title: 'Vista previa del mapeo de respuesta',
+      description: `${KEY_NOTE} con webhooks:read. Con el mapeo de respuesta guardado en la integración, dice qué campos rellenaría Snappli si el servidor respondiera este cuerpo. No envía ni guarda nada.`,
+      inputSchema: {
+        id: z.string().describe('Id de la integración.'),
+        response_body: z.string().describe('Cuerpo de la respuesta de tu servidor (texto).'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    tool(async ({ id, response_body }: { id: string; response_body: string }) =>
+      previewMapping(await keyed(), id, response_body),
+    ),
+  );
+
+  if (allowWrite) {
+    server.registerTool(
+      'snappli_test_webhook',
+      {
+        title: 'Enviar prueba de webhook',
+        description: `${KEY_NOTE} con webhooks:test. El botón «Enviar prueba» del panel: Snappli envía un payload de prueba a la URL configurada en la integración (llega de verdad) y devuelve el código, la respuesta, el id de la entrega y lo que rellenaría el mapeo.`,
+        inputSchema: { id: z.string().describe('Id de la integración.') },
+        annotations: { destructiveHint: false, openWorldHint: true },
+      },
+      tool(async ({ id }: { id: string }) => testWebhook(await keyed(), id, allowWrite)),
+    );
+
+    server.registerTool(
+      'snappli_retry_delivery',
+      {
+        title: 'Reintentar entrega',
+        description: `${KEY_NOTE} con webhooks:test. Vuelve a encolar una entrega (normalmente FAILED): Snappli la envía de nuevo a la URL configurada (llega de verdad). Mira el resultado después con snappli_webhook_deliveries.`,
+        inputSchema: { id: z.string().describe('Id de la entrega.') },
+        annotations: { destructiveHint: false, openWorldHint: true },
+      },
+      tool(async ({ id }: { id: string }) => retryDelivery(await keyed(), id, allowWrite)),
+    );
+  }
 
   return server;
 }

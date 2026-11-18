@@ -19,7 +19,11 @@ const target = join(root, 'packages', 'sdk', 'src', 'generated');
 const check = process.argv.includes('--check');
 
 /** Puntos de entrada: lo que usa el SDK. Las dependencias relativas se copian solas. */
-const ENTRIES = ['schemas/webhook-integration.schema.ts', 'connectors.ts'];
+const ENTRIES = [
+  'schemas/webhook-integration.schema.ts',
+  'schemas/public-api.schema.ts',
+  'connectors.ts',
+];
 
 if (!existsSync(shared)) {
   console.error(`No encuentro ${shared}. Clona snappli-backend al lado o usa SNAPPLI_BACKEND_DIR.`);

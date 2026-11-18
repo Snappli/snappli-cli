@@ -1,7 +1,16 @@
 import { createRequire } from 'node:module';
 import { DEFAULT_API_URL } from './connector-events.js';
 import { SnappliError } from './errors.js';
-import type { PaginatedResponse } from './generated/index.js';
+import type {
+  PaginatedResponse,
+  PublicApiMe,
+  PublicWebhookDelivery,
+  PublicWebhookDeliveryDetail,
+  PublicWebhookIntegration,
+  PublicWebhookTestResult,
+  WebhookDeliveryStatusValue,
+  WebhookMappingResult,
+} from './generated/index.js';
 
 /** Versión del paquete (va en el User-Agent). */
 export const SDK_VERSION: string = (
@@ -37,6 +46,14 @@ export interface ContactListParams {
   pipelineStageId?: string;
 }
 
+export interface WebhookDeliveryListParams {
+  page?: number;
+  /** Máximo 100. */
+  limit?: number;
+  webhookIntegrationId?: string;
+  status?: WebhookDeliveryStatusValue;
+}
+
 /** Muestra solo el principio de una key: `sk_1a2b…`. */
 export function maskApiKey(apiKey: string): string {
   return apiKey.length > 8 ? `${apiKey.slice(0, 7)}…` : '…';
@@ -51,6 +68,22 @@ export class Snappli {
   readonly contacts: {
     list: (params?: ContactListParams) => Promise<PaginatedResponse<Contact>>;
     get: (id: string) => Promise<Contact>;
+  };
+  /** Integraciones de webhook (permiso `webhooks:read`; `test` necesita `webhooks:test`). */
+  readonly webhookIntegrations: {
+    list: () => Promise<PublicWebhookIntegration[]>;
+    get: (id: string) => Promise<PublicWebhookIntegration>;
+    /** El botón «Enviar prueba» del panel: llega de verdad a la URL configurada. */
+    test: (id: string) => Promise<PublicWebhookTestResult>;
+    /** Qué rellenaría el mapeo guardado con esta respuesta (texto). No envía ni guarda nada. */
+    previewMapping: (id: string, responseBody: string) => Promise<WebhookMappingResult>;
+  };
+  /** Historial de entregas (permiso `webhooks:read`; `retry` necesita `webhooks:test`). */
+  readonly webhookDeliveries: {
+    list: (params?: WebhookDeliveryListParams) => Promise<PaginatedResponse<PublicWebhookDelivery>>;
+    get: (id: string) => Promise<PublicWebhookDeliveryDetail>;
+    /** Vuelve a encolar la entrega: llega de verdad a la URL configurada. */
+    retry: (id: string) => Promise<{ success: boolean }>;
   };
   readonly #apiKey: string;
   readonly #fetch: typeof fetch;
@@ -74,8 +107,28 @@ export class Snappli {
       .join(' ');
     this.contacts = {
       list: (params = {}) => this.request('GET', '/v1/contacts', { query: { ...params } }),
-      get: (id) => this.request('GET', `/v1/contacts/${encodeURIComponent(id)}`),
+      get: (id) => this.request('GET', `/v1/contacts/${path(id)}`),
     };
+    this.webhookIntegrations = {
+      list: () => this.request('GET', '/v1/webhook-integrations'),
+      get: (id) => this.request('GET', `/v1/webhook-integrations/${path(id)}`),
+      test: (id) => this.request('POST', `/v1/webhook-integrations/${path(id)}/test`),
+      previewMapping: (id, responseBody) =>
+        this.request('POST', `/v1/webhook-integrations/${path(id)}/mapping-preview`, {
+          body: { body: responseBody },
+        }),
+    };
+    this.webhookDeliveries = {
+      list: (params = {}) =>
+        this.request('GET', '/v1/webhook-deliveries', { query: { ...params } }),
+      get: (id) => this.request('GET', `/v1/webhook-deliveries/${path(id)}`),
+      retry: (id) => this.request('POST', `/v1/webhook-deliveries/${path(id)}/retry`),
+    };
+  }
+
+  /** Organización, nombre de la key, sus permisos y el límite por minuto. */
+  me(): Promise<PublicApiMe> {
+    return this.request('GET', '/v1/me');
   }
 
   /** Petición a la API (`path` sin `/api`, p. ej. `/v1/contacts`). */
@@ -116,7 +169,7 @@ export class Snappli {
     } catch {
       // Cuerpo no JSON: se deja como texto.
     }
-    if (!response.ok) throw errorFromResponse(response.status, body);
+    if (!response.ok) throw errorFromResponse(response.status, body, response.headers);
     return body as T;
   }
 }
@@ -129,7 +182,12 @@ const CODES: Record<number, string> = {
   429: 'rate_limited',
 };
 
-function errorFromResponse(status: number, body: unknown): SnappliError {
+function path(id: string): string {
+  if (!id) throw new SnappliError('Falta el id.', 'invalid_request');
+  return encodeURIComponent(id);
+}
+
+function errorFromResponse(status: number, body: unknown, headers: Headers): SnappliError {
   const raw =
     body && typeof body === 'object' && 'message' in body
       ? (body as { message: unknown }).message
@@ -139,8 +197,10 @@ function errorFromResponse(status: number, body: unknown): SnappliError {
     : typeof raw === 'string'
       ? raw
       : `HTTP ${status}`;
+  const retryAfter = Number(headers.get('retry-after'));
+  const hint = status === 429 && retryAfter > 0 ? ` Reintenta en ${retryAfter} s.` : '';
   return new SnappliError(
-    message,
+    `${message}${hint}`,
     CODES[status] ?? (status >= 500 ? 'server_error' : 'http_error'),
     {
       status,
