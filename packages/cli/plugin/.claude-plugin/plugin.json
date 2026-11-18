@@ -1,0 +1,13 @@
+{
+  "name": "snappli",
+  "description": "Integra tu sistema con Snappli: skill de integración (webhooks, conectores y eventos) y servidor MCP para probar tu receptor, tus respuestas y tus eventos en local.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Snappli",
+    "url": "https://snappli.io"
+  },
+  "homepage": "https://docs.snappli.io/desarrolladores/herramientas/",
+  "repository": "https://github.com/Snappli/snappli-cli",
+  "license": "MIT",
+  "keywords": ["snappli", "webhooks", "whatsapp", "crm"]
+}

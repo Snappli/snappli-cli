@@ -1,0 +1,46 @@
+{
+  "name": "@snappli/cli",
+  "version": "0.0.0",
+  "description": "CLI y servidor MCP de Snappli para integradores: prueba webhooks, eventos de conector y respuestas de tu API desde la terminal o tu agente.",
+  "license": "MIT",
+  "type": "module",
+  "homepage": "https://docs.snappli.io/desarrolladores/herramientas/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Snappli/snappli-cli.git",
+    "directory": "packages/cli"
+  },
+  "bugs": "https://github.com/Snappli/snappli-cli/issues",
+  "keywords": [
+    "snappli",
+    "webhooks",
+    "whatsapp",
+    "cli",
+    "mcp",
+    "claude-code"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "snappli": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "plugin"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@snappli/sdk": "workspace:^",
+    "zod": "^3.25.76"
+  }
+}
